@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FiberTrade2
@@ -11,7 +12,8 @@ namespace FiberTrade2
         private UdpClient udpClient;
         private int sentPacketsCount;
         private int receivedPacketsCount;
-        private int lostPacketsCount;
+        private bool listening;
+        private UdpClient udpListener;
 
         public Form1()
         {
@@ -21,6 +23,8 @@ namespace FiberTrade2
         private void Form1_Load(object sender, EventArgs e)
         {
             udpClient = new UdpClient();
+            udpListener = new UdpClient();
+            listening = false;
         }
 
         private void SendButton_Click(object sender, EventArgs e)
@@ -38,40 +42,52 @@ namespace FiberTrade2
             }
         }
 
-        private void StartListeningButton_Click(object sender, EventArgs e)
+        private async Task StartListeningAsync(IPAddress listenIP, int listenPort)
         {
-            if (IPAddress.TryParse(listenIPTextBox.Text, out IPAddress listenIP) && int.TryParse(listenPortTextBox.Text, out int listenPort))
+            using (UdpClient udpListener = new UdpClient(new IPEndPoint(listenIP, listenPort)))
             {
-                UdpClient listener = new UdpClient(listenPort);
-                IPEndPoint endPoint = new IPEndPoint(listenIP, listenPort);
-
-                try
+                while (listening)
                 {
-                    while (true)
+                    try
                     {
-                        byte[] receivedData = listener.Receive(ref endPoint);
+                        UdpReceiveResult receivedResult = await udpListener.ReceiveAsync();
+                        byte[] receivedData = receivedResult.Buffer;
                         string receivedMessage = Encoding.ASCII.GetString(receivedData);
+                        receivedMessageLabel.Text = receivedMessage;
                         receivedPacketsCount++;
                         receivedPacketsLabel.Text = $"Received Packets: {receivedPacketsCount}";
                     }
+                    catch (SocketException ex)
+                    {
+
+                    }
                 }
-                catch (SocketException ex)
+            }
+        }
+
+        private void StartListeningButton_Click(object sender, EventArgs e)
+        {
+            if (!listening)
+            {
+                if (IPAddress.TryParse(listenIPTextBox.Text, out IPAddress listenIP) && int.TryParse(listenPortTextBox.Text, out int listenPort))
                 {
-                    // SocketException will occur when the listener is closed
-                    listener.Close();
+                    listening = true;
+                    StartListeningButton.Text = "Stop Listening";
+
+                    Task.Run(async () => await StartListeningAsync(listenIP, listenPort));
+                }
+                else
+                {
+                    MessageBox.Show("Invalid IP address or port.");
                 }
             }
             else
             {
-                MessageBox.Show("Invalid IP address or port.");
+                listening = false;
+                StartListeningButton.Text = "Start Listening";
             }
         }
 
-        private void StopListeningButton_Click(object sender, EventArgs e)
-        {
-            // Closing the listener will break out of the Receive loop
-            udpClient.Close();
-        }
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
